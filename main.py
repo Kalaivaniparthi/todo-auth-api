@@ -1,4 +1,5 @@
-from fastapi import FastAPI, HTTPException, Header
+from fastapi import FastAPI, HTTPException, Header, Depends, Security
+from fastapi.security import HTTPBearer
 from pydantic import BaseModel
 from typing import Optional
 from auth import supabase
@@ -8,7 +9,7 @@ app = FastAPI(
     description="Secure API with Supabase Auth",
     version="1.0.0"
 )
-
+security = HTTPBearer()
 # ============================================
 # DATA MODELS
 # ============================================
@@ -63,6 +64,14 @@ def login(data: AuthRequest):
     except Exception:
         raise HTTPException(status_code=401, detail="Invalid login credentials")
 
+def get_current_user(credentials = Security(security)):
+    """Reusable dependency that verifies the JWT token."""
+    token = credentials.credentials
+    try:
+        user_response = supabase.auth.get_user(token)
+        return {"user": user_response.user, "token": token}
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
 # ============================================
 # PUBLIC ROUTE (no auth required)
 # ============================================
@@ -72,31 +81,27 @@ def public_info():
 
 # ============================================
 # PROTECTED ROUTE (now with token verification)
-# ============================================
-@app.get("/protected/profile", summary="Get user profile - verified")
-def get_profile(authorization: Optional[str] = Header(None)):
-    # 1. Check header exists
-    if not authorization:
-        raise HTTPException(status_code=401, detail="Access token required")
+# ========================
+@app.get("/protected/profile", summary="Get user profile - via dependency")
+def get_profile(current=Depends(get_current_user)):
+    user = current["user"]
+    return {
+        "id": user.id,
+        "email": user.email,
+        "created_at": str(user.created_at)
+    }
+@app.get("/protected/dashboard", summary="Dashboard - protected")
+def dashboard(current=Depends(get_current_user)):
+    return {
+        "message": f"Welcome to your dashboard, {current['user'].email}",
+        "user_id": current["user"].id
+    }
 
-    # 2. Check format: must start with "Bearer "
-    if not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Invalid authorization header format")
 
-    # 3. Extract the token
-    token = authorization.replace("Bearer ", "").strip()
-
-    if not token:
-        raise HTTPException(status_code=401, detail="Access token required")
-
-    # 4. Verify with Supabase
+@app.post("/auth/logout", status_code=204, summary="Logout")
+def logout(current=Depends(get_current_user)):
     try:
-        user_response = supabase.auth.get_user(token)
-        user = user_response.user
-        return {
-            "id": user.id,
-            "email": user.email,
-            "created_at": str(user.created_at)
-        }
-    except Exception:
-        raise HTTPException(status_code=401, detail="Invalid or expired token")
+        supabase.auth.sign_out()
+        return None
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
