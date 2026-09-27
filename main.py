@@ -1,5 +1,6 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Header
 from pydantic import BaseModel
+from typing import Optional
 from auth import supabase
 
 app = FastAPI(
@@ -20,7 +21,6 @@ class AuthRequest(BaseModel):
 # ============================================
 @app.post("/auth/signup", status_code=201, summary="Create a new user account")
 def signup(data: AuthRequest):
-    # Validate input
     if not data.email or not data.password:
         raise HTTPException(status_code=400, detail="Email and password are required")
 
@@ -44,7 +44,6 @@ def signup(data: AuthRequest):
 # ============================================
 @app.post("/auth/login", summary="Login and receive JWT")
 def login(data: AuthRequest):
-    # Validate input
     if not data.email or not data.password:
         raise HTTPException(status_code=400, detail="Email and password are required")
 
@@ -63,3 +62,22 @@ def login(data: AuthRequest):
         }
     except Exception:
         raise HTTPException(status_code=401, detail="Invalid login credentials")
+
+# ============================================
+# PUBLIC ROUTE (no auth required)
+# ============================================
+@app.get("/public/info", summary="Public info - no auth needed")
+def public_info():
+    return {"message": "Welcome stranger! This info is public."}
+
+# ============================================
+# PROTECTED ROUTE (basic - not verifying yet)
+# ============================================
+@app.get("/protected/profile", summary="Get user profile - auth required")
+def get_profile(authorization: Optional[str] = Header(None)):
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Access token required")
+    return {
+        "message": "Token received",
+        "header": authorization
+    }
