@@ -71,13 +71,32 @@ def public_info():
     return {"message": "Welcome stranger! This info is public."}
 
 # ============================================
-# PROTECTED ROUTE (basic - not verifying yet)
+# PROTECTED ROUTE (now with token verification)
 # ============================================
-@app.get("/protected/profile", summary="Get user profile - auth required")
+@app.get("/protected/profile", summary="Get user profile - verified")
 def get_profile(authorization: Optional[str] = Header(None)):
+    # 1. Check header exists
     if not authorization:
         raise HTTPException(status_code=401, detail="Access token required")
-    return {
-        "message": "Token received",
-        "header": authorization
-    }
+
+    # 2. Check format: must start with "Bearer "
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Invalid authorization header format")
+
+    # 3. Extract the token
+    token = authorization.replace("Bearer ", "").strip()
+
+    if not token:
+        raise HTTPException(status_code=401, detail="Access token required")
+
+    # 4. Verify with Supabase
+    try:
+        user_response = supabase.auth.get_user(token)
+        user = user_response.user
+        return {
+            "id": user.id,
+            "email": user.email,
+            "created_at": str(user.created_at)
+        }
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
